@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -23,6 +24,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -30,14 +34,27 @@ var (
 	ErrTimeout = errors.New("command timed out")
 )
 
+func Escape(s string) string {
+	return "'" + strings.Replace(s, "'", `'"'"'`, -1) + "'"
+}
+
 type Invoker interface {
 	Command(string, ...string) ([]byte, error)
 	CommandWithContext(context.Context, string, ...string) ([]byte, error)
 }
 
 type Invoke struct{}
+type RemoteInvoke struct {
+	client *ssh.Client
+}
 
 func (i Invoke) Command(name string, arg ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	return i.CommandWithContext(ctx, name, arg...)
+}
+
+func (i RemoteInvoke) Command(name string, arg ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 	return i.CommandWithContext(ctx, name, arg...)
@@ -59,6 +76,37 @@ func (i Invoke) CommandWithContext(ctx context.Context, name string, arg ...stri
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (i RemoteInvoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
+	session, err := i.client.NewSession()
+	if err != nil {
+		return []byte(""), err
+	}
+	defer func() {
+		_ = session.Close()
+	}()
+	var args []string
+	args = append(args, Escape(name))
+	for _, a := range arg {
+		args = append(args, Escape(a))
+	}
+	cmd := strings.Join(args, " ")
+	var output []byte
+	done := make(chan struct{})
+	go func() {
+		output, err = session.CombinedOutput(cmd)
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		return []byte(""), ctx.Err()
+	case <-done:
+	}
+	if err != nil {
+		return []byte(""), err
+	}
+	return output, nil
 }
 
 type FakeInvoke struct {
@@ -100,18 +148,11 @@ func ReadLines(filename string) ([]string, error) {
 	return ReadLinesOffsetN(filename, 0, -1)
 }
 
-// ReadLines reads contents from file and splits them by new line.
-// The offset tells at which line number to start.
-// The count determines the number of lines to read (starting from offset):
-//   n >= 0: at most n lines
-//   n < 0: whole file
-func ReadLinesOffsetN(filename string, offset uint, n int) ([]string, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return []string{""}, err
-	}
-	defer f.Close()
+func RemoteReadLines(client *sftp.Client, filename string) ([]string, error) {
+	return RemoteReadLinesOffsetN(client, filename, 0, -1)
+}
 
+func readLinesOffsetN(f io.Reader, offset uint, n int) ([]string, error) {
 	var ret []string
 
 	r := bufio.NewReader(f)
@@ -127,6 +168,29 @@ func ReadLinesOffsetN(filename string, offset uint, n int) ([]string, error) {
 	}
 
 	return ret, nil
+}
+
+// ReadLines reads contents from file and splits them by new line.
+// The offset tells at which line number to start.
+// The count determines the number of lines to read (starting from offset):
+//   n >= 0: at most n lines
+//   n < 0: whole file
+func ReadLinesOffsetN(filename string, offset uint, n int) ([]string, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return []string{""}, err
+	}
+	defer f.Close()
+	return readLinesOffsetN(f, offset, n)
+}
+
+func RemoteReadLinesOffsetN(client *sftp.Client, filename string, offset uint, n int) ([]string, error) {
+	f, err := client.Open(filename)
+	if err != nil {
+		return []string{""}, err
+	}
+	defer f.Close()
+	return readLinesOffsetN(f, offset, n)
 }
 
 func IntToString(orig []int8) string {
@@ -291,6 +355,13 @@ func PathExists(filename string) bool {
 	return false
 }
 
+func RemotePathExists(client *sftp.Client, filename string) bool {
+	if _, err := client.Stat(filename); err == nil {
+		return true
+	}
+	return false
+}
+
 //GetEnv retrieves the environment variable key. If it does not exist it returns the default.
 func GetEnv(key string, dfault string, combineWith ...string) string {
 	value := os.Getenv(key)
@@ -309,7 +380,6 @@ func GetEnv(key string, dfault string, combineWith ...string) string {
 		copy(all[1:], combineWith)
 		return filepath.Join(all...)
 	}
-	panic("invalid switch case")
 }
 
 func HostProc(combineWith ...string) string {
@@ -346,4 +416,107 @@ func getSysctrlEnv(env []string) []string {
 		env = append(env, "LC_ALL=C")
 	}
 	return env
+}
+
+func LinuxDoSysctrl(mib string) ([]string, error) {
+	sysctl, err := exec.LookPath("sysctl")
+	if err != nil {
+		return []string{}, err
+	}
+	cmd := exec.Command(sysctl, "-n", mib)
+	cmd.Env = getSysctrlEnv(os.Environ())
+	out, err := cmd.Output()
+	if err != nil {
+		return []string{}, err
+	}
+	v := strings.Replace(string(out), "{ ", "", 1)
+	v = strings.Replace(v, " }", "", 1)
+	values := strings.Fields(v)
+	return values, nil
+}
+
+func RemoteLinuxDoSysctrl(client *ssh.Client, mib string) ([]string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return []string{}, err
+	}
+	cmd := fmt.Sprintf("LC_ALL=C sysctl -n %s", mib)
+	out, err := session.Output(cmd)
+	if err != nil {
+		return []string{}, err
+	}
+	v := strings.Replace(string(out), "{ ", "", 1)
+	v = strings.Replace(v, " }", "", 1)
+	values := strings.Fields(v)
+	return values, nil
+}
+
+func LinuxNumProcs() (uint64, error) {
+	f, err := os.Open(HostProc())
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	list, err := f.Readdirnames(-1)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(len(list)), err
+}
+
+func RemoteLinuxNumProcs(client *sftp.Client) (uint64, error) {
+	list, err := client.ReadDir(HostProc())
+	if err != nil {
+		return 0, err
+	}
+	return uint64(len(list)), err
+}
+
+func CallLsofWithContext(ctx context.Context, invoke Invoker, pid int32, args ...string) ([]string, error) {
+	var cmd []string
+	if pid == 0 { // will get from all processes.
+		cmd = []string{"-a", "-n", "-P"}
+	} else {
+		cmd = []string{"-a", "-n", "-P", "-p", strconv.Itoa(int(pid))}
+	}
+	cmd = append(cmd, args...)
+	out, err := invoke.CommandWithContext(ctx, "lsof", cmd...)
+	if err != nil {
+		// if no pid found, lsof returns code 1.
+		if err.Error() == "exit status 1" && len(out) == 0 {
+			return []string{}, nil
+		}
+	}
+	lines := strings.Split(string(out), "\n")
+
+	var ret []string
+	for _, l := range lines[1:] {
+		if len(l) == 0 {
+			continue
+		}
+		ret = append(ret, l)
+	}
+	return ret, nil
+}
+
+func CallPgrepWithContext(ctx context.Context, invoke Invoker, pid int32) ([]int32, error) {
+	cmd := []string{"-P", strconv.Itoa(int(pid))}
+	out, err := invoke.CommandWithContext(ctx, "pgrep", cmd...)
+	if err != nil {
+		return []int32{}, err
+	}
+	lines := strings.Split(string(out), "\n")
+	ret := make([]int32, 0, len(lines))
+	for _, l := range lines {
+		if len(l) == 0 {
+			continue
+		}
+		i, err := strconv.Atoi(l)
+		if err != nil {
+			continue
+		}
+		ret = append(ret, int32(i))
+	}
+	return ret, nil
 }
