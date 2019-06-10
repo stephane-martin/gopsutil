@@ -52,11 +52,6 @@ type lastPercent struct {
 	lastPerCPUTimes []TimesStat
 }
 
-// Counts returns the number of physical or logical cores in the system
-func Counts(client *sftp.Client, logical bool) (int, error) {
-	return CountsWithContext(context.Background(), client, logical)
-}
-
 func (c TimesStat) String() string {
 	v := []string{
 		`"cpu":"` + c.CPU + `"`,

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"github.com/stephane-martin/gopsutil/cpu"
 	"github.com/stephane-martin/gopsutil/internal/common"
-	"github.com/stephane-martin/gopsutil/mem"
+	"github.com/stephane-martin/gopsutil/linux/cpu"
+	"github.com/stephane-martin/gopsutil/linux/mem"
 	"golang.org/x/crypto/ssh"
 )
 

@@ -2,7 +2,32 @@ package mem
 
 import (
 	"encoding/json"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
+
+type Mem struct {
+	sshClient  *ssh.Client
+	sftpClient *sftp.Client
+	pageSize   uint64
+}
+
+func NewMem(sshClient *ssh.Client, sftpClient *sftp.Client) (*Mem, error) {
+	size, err := PageSize(sshClient)
+	if err != nil {
+		return nil, err
+	}
+	return &Mem{
+		sshClient:  sshClient,
+		sftpClient: sftpClient,
+		pageSize:   size,
+	}, nil
+}
+
+func (m *Mem) VirtualMemory() (*VirtualMemoryStat, error) {
+	return VirtualMemory(m.sftpClient, m.pageSize)
+}
 
 // Memory usage statistics. Total, Available and Used contain numbers of bytes
 // for human consumption.

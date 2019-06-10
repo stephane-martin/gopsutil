@@ -4,33 +4,23 @@ package process
 
 import (
 	"context"
-	"os"
 	"os/user"
 	"strconv"
 	"syscall"
 
+	"github.com/stephane-martin/gopsutil/internal/common"
 	"golang.org/x/sys/unix"
 )
 
 // SendSignal sends a unix.Signal to the process.
-// Currently, SIGSTOP, SIGCONT, SIGTERM and SIGKILL are supported.
 func (p *Process) SendSignal(sig syscall.Signal) error {
 	return p.SendSignalWithContext(context.Background(), sig)
 }
 
 func (p *Process) SendSignalWithContext(ctx context.Context, sig syscall.Signal) error {
-	// TODO: rewrite using kill over SSH
-	process, err := os.FindProcess(int(p.Pid))
-	if err != nil {
-		return err
-	}
-
-	err = process.Signal(sig)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	invoke := common.RemoteInvoke{Client: p.sshClient}
+	_, err := invoke.CommandWithContext(ctx, "kill", "--signal", strconv.Itoa(int(sig)), strconv.Itoa(p.Pid))
+	return err
 }
 
 // Suspend sends SIGSTOP to the process.

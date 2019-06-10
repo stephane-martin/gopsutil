@@ -8,7 +8,36 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/pkg/sftp"
+	"github.com/stephane-martin/gopsutil/internal/common"
+	"golang.org/x/crypto/ssh"
 )
+
+type Net struct {
+	sshClient  *ssh.Client
+	sftpClient *sftp.Client
+}
+
+func NewNet(sshClient *ssh.Client, sftpClient *sftp.Client) *Net {
+	return &Net{sshClient: sshClient, sftpClient: sftpClient}
+}
+
+func (n *Net) Interfaces() ([]InterfaceStat, error) {
+	return Interfaces(n.sshClient)
+}
+
+func (n *Net) Connections(kind string) ([]ConnectionStat, error) {
+	return Connections(n.sftpClient, kind)
+}
+
+func (n *Net) ConnectionsMax(kind string, max int) ([]ConnectionStat, error) {
+	return ConnectionsMax(n.sftpClient, kind, max)
+}
+
+func (n *Net) ConnectionsPid(kind string, pid int) ([]ConnectionStat, error) {
+	return ConnectionsPid(n.sftpClient, kind, pid)
+}
 
 type IOCountersStat struct {
 	Name        string `json:"name"`        // interface name
@@ -32,14 +61,14 @@ type Addr struct {
 }
 
 type ConnectionStat struct {
-	Fd     uint32  `json:"fd"`
-	Family uint32  `json:"family"`
-	Type   uint32  `json:"type"`
-	Laddr  Addr    `json:"localaddr"`
-	Raddr  Addr    `json:"remoteaddr"`
-	Status string  `json:"status"`
-	Uids   []int32 `json:"uids"`
-	Pid    int32   `json:"pid"`
+	Fd     uint32 `json:"fd"`
+	Family uint32 `json:"family"`
+	Type   uint32 `json:"type"`
+	Laddr  Addr   `json:"localaddr"`
+	Raddr  Addr   `json:"remoteaddr"`
+	Status string `json:"status"`
+	Uids   []int  `json:"uids"`
+	Pid    int    `json:"pid"`
 }
 
 // System wide stats about different network protocols
@@ -59,6 +88,35 @@ type InterfaceStat struct {
 	HardwareAddr string          `json:"hardwareaddr"` // IEEE MAC-48, EUI-48 and EUI-64 form
 	Flags        []string        `json:"flags"`        // e.g., FlagUp, FlagLoopback, FlagMulticast
 	Addrs        []InterfaceAddr `json:"addrs"`
+}
+
+type ipAddr struct {
+	Family            string `json:"family"`
+	Local             string `json:"local"`
+	PrefixLen         int    `json:"prefixlen"`
+	Broadcast         string `json:"broadcast"`
+	Scope             string `json:"scope"`
+	Dynamic           bool   `json:"dynamic"`
+	NoPrefixRoute     bool   `json:"noprefixroute"`
+	Label             string `json:"label"`
+	ValidLifeTime     int    `json:"valid_life_time"`
+	PreferredLifeTime int    `json:"preferred_life_time"`
+}
+
+type ipLink struct {
+	Index     int      `json:"ifindex"`
+	Name      string   `json:"ifname"`
+	Flags     []string `json:"flags"`
+	MTU       int      `json:"mtu"`
+	QDisc     string   `json:"qdisc"`
+	OPerState string   `json:"operstate"`
+	Mode      string   `json:"linkmode"`
+	Group     string   `json:"group"`
+	TXQLen    int      `json:"txqlen"`
+	Type      string   `json:"link_type"`
+	Address   string   `json:"address"`
+	Broadcast string   `json:"broadcast"`
+	AddrInfo  []ipAddr `json:"addr_info"`
 }
 
 type FilterStat struct {
@@ -104,54 +162,37 @@ func (n InterfaceAddr) String() string {
 	return string(s)
 }
 
-func Interfaces() ([]InterfaceStat, error) {
-	return InterfacesWithContext(context.Background())
+func Interfaces(sshClient *ssh.Client) ([]InterfaceStat, error) {
+	return InterfacesWithContext(context.Background(), sshClient)
 }
 
-func InterfacesWithContext(ctx context.Context) ([]InterfaceStat, error) {
-	is, err := net.Interfaces()
+func InterfacesWithContext(ctx context.Context, sshClient *ssh.Client) ([]InterfaceStat, error) {
+	invoke := common.RemoteInvoke{Client: sshClient}
+	b, err := invoke.CommandWithContext(ctx, "ip", "-j", "addr", "show")
 	if err != nil {
 		return nil, err
 	}
-	ret := make([]InterfaceStat, 0, len(is))
-	for _, ifi := range is {
-
-		var flags []string
-		if ifi.Flags&net.FlagUp != 0 {
-			flags = append(flags, "up")
-		}
-		if ifi.Flags&net.FlagBroadcast != 0 {
-			flags = append(flags, "broadcast")
-		}
-		if ifi.Flags&net.FlagLoopback != 0 {
-			flags = append(flags, "loopback")
-		}
-		if ifi.Flags&net.FlagPointToPoint != 0 {
-			flags = append(flags, "pointtopoint")
-		}
-		if ifi.Flags&net.FlagMulticast != 0 {
-			flags = append(flags, "multicast")
-		}
-
+	var links []ipLink
+	err = json.Unmarshal(b, &links)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]InterfaceStat, 0, len(links))
+	for _, ifi := range links {
 		r := InterfaceStat{
 			Name:         ifi.Name,
 			MTU:          ifi.MTU,
-			HardwareAddr: ifi.HardwareAddr.String(),
-			Flags:        flags,
+			HardwareAddr: ifi.Address,
+			Flags:        ifi.Flags,
 		}
-		addrs, err := ifi.Addrs()
-		if err == nil {
-			r.Addrs = make([]InterfaceAddr, 0, len(addrs))
-			for _, addr := range addrs {
-				r.Addrs = append(r.Addrs, InterfaceAddr{
-					Addr: addr.String(),
-				})
-			}
-
+		r.Addrs = make([]InterfaceAddr, 0, len(ifi.AddrInfo))
+		for _, addr := range ifi.AddrInfo {
+			r.Addrs = append(r.Addrs, InterfaceAddr{
+				Addr: addr.Local,
+			})
 		}
 		ret = append(ret, r)
 	}
-
 	return ret, nil
 }
 
@@ -217,7 +258,7 @@ func parseNetLine(line string) (ConnectionStat, error) {
 		Type:   uint32(netType),
 		Laddr:  laddr,
 		Raddr:  raddr,
-		Pid:    int32(pid),
+		Pid:    pid,
 	}
 	if len(f) == 10 {
 		n.Status = strings.Trim(f[9], "()")

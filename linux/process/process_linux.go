@@ -16,10 +16,10 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
-	"github.com/stephane-martin/gopsutil/cpu"
-	"github.com/stephane-martin/gopsutil/host"
 	"github.com/stephane-martin/gopsutil/internal/common"
-	"github.com/stephane-martin/gopsutil/net"
+	"github.com/stephane-martin/gopsutil/linux/cpu"
+	"github.com/stephane-martin/gopsutil/linux/host"
+	"github.com/stephane-martin/gopsutil/linux/net"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -127,12 +127,12 @@ func (p *Process) ExeWithContext(ctx context.Context) (string, error) {
 
 // Cmdline returns the command line arguments of the process as a string with
 // each argument separated by 0x20 ascii character.
-func (p *Process) Cmdline(sftpClient *sftp.Client) (string, error) {
-	return p.CmdlineWithContext(context.Background(), sftpClient)
+func (p *Process) Cmdline() (string, error) {
+	return p.CmdlineWithContext(context.Background())
 }
 
-func (p *Process) CmdlineWithContext(ctx context.Context, sftpClient *sftp.Client) (string, error) {
-	return p.fillFromCmdline(sftpClient)
+func (p *Process) CmdlineWithContext(ctx context.Context) (string, error) {
+	return p.fillFromCmdline()
 }
 
 // CmdlineSlice returns the command line arguments of the process as a slice with each
@@ -506,7 +506,7 @@ func (p *Process) Connections(sftpClient *sftp.Client) ([]net.ConnectionStat, er
 }
 
 func (p *Process) ConnectionsWithContext(ctx context.Context, sftpClient *sftp.Client) ([]net.ConnectionStat, error) {
-	return net.ConnectionsPid(sftpClient, "all", int32(p.Pid))
+	return net.ConnectionsPid(sftpClient, "all", p.Pid)
 }
 
 // Connections returns a slice of net.ConnectionStat used by the process at most `max`
@@ -515,7 +515,7 @@ func (p *Process) ConnectionsMax(sftpClient *sftp.Client, max int) ([]net.Connec
 }
 
 func (p *Process) ConnectionsMaxWithContext(ctx context.Context, sftpClient *sftp.Client, max int) ([]net.ConnectionStat, error) {
-	return net.ConnectionsPidMax(sftpClient, "all", int32(p.Pid), max)
+	return net.ConnectionsPidMax(sftpClient, "all", p.Pid, max)
 }
 
 // NetIOCounters returns NetIOCounters of the process.
@@ -830,22 +830,19 @@ func (p *Process) fillFromExeWithContext(ctx context.Context) (string, error) {
 }
 
 // Get cmdline from /proc/(pid)/cmdline
-func (p *Process) fillFromCmdline(sftpClient *sftp.Client) (string, error) {
-	return p.fillFromCmdlineWithContext(context.Background(), sftpClient)
+func (p *Process) fillFromCmdline() (string, error) {
+	return p.fillFromCmdlineWithContext(context.Background())
 }
 
-func (p *Process) fillFromCmdlineWithContext(ctx context.Context, sftpClient *sftp.Client) (string, error) {
+func (p *Process) fillFromCmdlineWithContext(ctx context.Context) (string, error) {
 	pid := p.Pid
 	cmdPath := common.HostProc(strconv.Itoa(int(pid)), "cmdline")
-	cmdline, err := common.RemoteReadFile(sftpClient, cmdPath)
+	cmdline, err := common.RemoteReadFile(p.sftpClient, cmdPath)
 	if err != nil {
 		return "", err
 	}
 	ret := strings.FieldsFunc(string(cmdline), func(r rune) bool {
-		if r == '\u0000' {
-			return true
-		}
-		return false
+		return r == '\u0000'
 	})
 
 	return strings.Join(ret, " "), nil

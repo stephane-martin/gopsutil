@@ -293,7 +293,7 @@ var netConnectionKindMap = map[string][]netConnectionKindType{
 }
 
 type inodeMap struct {
-	pid int32
+	pid int
 	fd  uint32
 }
 
@@ -304,8 +304,8 @@ type connTmp struct {
 	laddr    Addr
 	raddr    Addr
 	status   string
-	pid      int32
-	boundPid int32
+	pid      int
+	boundPid int
 	path     string
 }
 
@@ -329,11 +329,11 @@ func ConnectionsMaxWithContext(ctx context.Context, sftpClient *sftp.Client, kin
 }
 
 // Return a list of network connections opened by a process.
-func ConnectionsPid(sftpClient *sftp.Client, kind string, pid int32) ([]ConnectionStat, error) {
+func ConnectionsPid(sftpClient *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
 	return ConnectionsPidWithContext(context.Background(), sftpClient, kind, pid)
 }
 
-func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int32) ([]ConnectionStat, error) {
+func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -357,11 +357,11 @@ func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kin
 }
 
 // Return up to `max` network connections opened by a process.
-func ConnectionsPidMax(sftpClient *sftp.Client, kind string, pid int32, max int) ([]ConnectionStat, error) {
+func ConnectionsPidMax(sftpClient *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
 	return ConnectionsPidMaxWithContext(context.Background(), sftpClient, kind, pid, max)
 }
 
-func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int32, max int) ([]ConnectionStat, error) {
+func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -384,7 +384,7 @@ func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, 
 	return statsFromInodes(sftpClient, root, pid, tmap, inodes)
 }
 
-func statsFromInodes(sftpClient *sftp.Client, root string, pid int32, tmap []netConnectionKindType, inodes map[string][]inodeMap) ([]ConnectionStat, error) {
+func statsFromInodes(sftpClient *sftp.Client, root string, pid int, tmap []netConnectionKindType, inodes map[string][]inodeMap) ([]ConnectionStat, error) {
 	dupCheckMap := make(map[string]struct{})
 	var ret []ConnectionStat
 
@@ -445,7 +445,7 @@ func statsFromInodes(sftpClient *sftp.Client, root string, pid int32, tmap []net
 }
 
 // getProcInodes returnes fd of the pid.
-func getProcInodes(sftpClient *sftp.Client, root string, pid int32, max int) (map[string][]inodeMap, error) {
+func getProcInodes(sftpClient *sftp.Client, root string, pid int, max int) (map[string][]inodeMap, error) {
 	ret := make(map[string][]inodeMap)
 
 	dir := fmt.Sprintf("%s/%d/fd", root, pid)
@@ -487,12 +487,12 @@ func getProcInodes(sftpClient *sftp.Client, root string, pid int32, max int) (ma
 // Note: this is a copy of process_linux.Pids()
 // FIXME: Import process occures import cycle.
 // move to common made other platform breaking. Need consider.
-func Pids() ([]int32, error) {
+func Pids() ([]int, error) {
 	return PidsWithContext(context.Background())
 }
 
-func PidsWithContext(ctx context.Context) ([]int32, error) {
-	var ret []int32
+func PidsWithContext(ctx context.Context) ([]int, error) {
+	var ret []int
 
 	d, err := os.Open(common.HostProc())
 	if err != nil {
@@ -510,7 +510,7 @@ func PidsWithContext(ctx context.Context) ([]int32, error) {
 			// if not numeric name, just skip
 			continue
 		}
-		ret = append(ret, int32(pid))
+		ret = append(ret, int(pid))
 	}
 
 	return ret, nil
@@ -521,15 +521,15 @@ func PidsWithContext(ctx context.Context) ([]int32, error) {
 // FIXME: Import process occures import cycle.
 // see remarks on pids()
 type process struct {
-	Pid  int32 `json:"pid"`
-	uids []int32
+	Pid  int `json:"pid"`
+	uids []int
 }
 
 // Uids returns user ids of the process as a slice of the int
-func (p *process) getUids(sftpClient *sftp.Client) ([]int32, error) {
+func (p *process) getUids(sftpClient *sftp.Client) ([]int, error) {
 	err := p.fillFromStatus(sftpClient)
 	if err != nil {
-		return []int32{}, err
+		return []int{}, err
 	}
 	return p.uids, nil
 }
@@ -537,7 +537,7 @@ func (p *process) getUids(sftpClient *sftp.Client) ([]int32, error) {
 // Get status from /proc/(pid)/status
 func (p *process) fillFromStatus(sftpClient *sftp.Client) error {
 	pid := p.Pid
-	statPath := common.HostProc(strconv.Itoa(int(pid)), "status")
+	statPath := common.HostProc(strconv.Itoa(pid), "status")
 	contents, err := common.RemoteReadFile(sftpClient, statPath)
 	if err != nil {
 		return err
@@ -551,13 +551,13 @@ func (p *process) fillFromStatus(sftpClient *sftp.Client) error {
 		value := tabParts[1]
 		switch strings.TrimRight(tabParts[0], ":") {
 		case "Uid":
-			p.uids = make([]int32, 0, 4)
+			p.uids = make([]int, 0, 4)
 			for _, i := range strings.Split(value, "\t") {
 				v, err := strconv.ParseInt(i, 10, 32)
 				if err != nil {
 					return err
 				}
-				p.uids = append(p.uids, int32(v))
+				p.uids = append(p.uids, int(v))
 			}
 		}
 	}
@@ -649,7 +649,7 @@ func parseIPv6HexString(src []byte) (net.IP, error) {
 	return net.IP(buf), nil
 }
 
-func processInet(sftpClient *sftp.Client, file string, kind netConnectionKindType, inodes map[string][]inodeMap, filterPid int32) ([]connTmp, error) {
+func processInet(sftpClient *sftp.Client, file string, kind netConnectionKindType, inodes map[string][]inodeMap, filterPid int) ([]connTmp, error) {
 
 	if strings.HasSuffix(file, "6") && !common.PathExists(file) {
 		// IPv6 not supported, return empty.
@@ -678,7 +678,7 @@ func processInet(sftpClient *sftp.Client, file string, kind netConnectionKindTyp
 		raddr := l[2]
 		status := l[3]
 		inode := l[9]
-		pid := int32(0)
+		var pid int
 		fd := uint32(0)
 		i, exists := inodes[inode]
 		if exists {
@@ -716,7 +716,7 @@ func processInet(sftpClient *sftp.Client, file string, kind netConnectionKindTyp
 	return ret, nil
 }
 
-func processUnix(sftpClient *sftp.Client, file string, kind netConnectionKindType, inodes map[string][]inodeMap, filterPid int32) ([]connTmp, error) {
+func processUnix(sftpClient *sftp.Client, file string, kind netConnectionKindType, inodes map[string][]inodeMap, filterPid int) ([]connTmp, error) {
 	// Read the contents of the /proc file with a single read sys call.
 	// This minimizes duplicates in the returned connections
 	// For more info:

@@ -74,10 +74,18 @@ func InfoWithContext(ctx context.Context, sshClient *ssh.Client, sftpClient *sft
 	sysProductUUID := common.HostSys("class/dmi/id/product_uuid")
 	machineID := common.HostEtc("machine-id")
 	procSysKernelRandomBootID := common.HostProc("sys/kernel/random/boot_id")
+	existsProduct, err := common.RemotePathExists(sftpClient, sysProductUUID)
+	if err != nil {
+		return nil, err
+	}
+	existsMachine, err := common.RemotePathExists(sftpClient, machineID)
+	if err != nil {
+		return nil, err
+	}
 	switch {
 	// In order to read this file, needs to be supported by kernel/arch and run as root
 	// so having fallback is important
-	case common.RemotePathExists(sftpClient, sysProductUUID):
+	case existsProduct:
 		lines, err := common.RemoteReadLines(sftpClient, sysProductUUID)
 		if err == nil && len(lines) > 0 && lines[0] != "" {
 			ret.HostID = strings.ToLower(lines[0])
@@ -85,7 +93,7 @@ func InfoWithContext(ctx context.Context, sshClient *ssh.Client, sftpClient *sft
 		}
 		fallthrough
 	// Fallback on GNU Linux systems with systemd, readable by everyone
-	case common.RemotePathExists(sftpClient, machineID):
+	case existsMachine:
 		lines, err := common.RemoteReadLines(sftpClient, machineID)
 		if err == nil && len(lines) > 0 && len(lines[0]) == 32 {
 			st := lines[0]
@@ -237,7 +245,7 @@ func UsersWithContext(ctx context.Context, client *sftp.Client) ([]UserStat, err
 func getOSRelease(client *sftp.Client) (platform string, version string, err error) {
 	contents, err := common.RemoteReadLines(client, common.HostEtc("os-release"))
 	if err != nil {
-		return "", "", nil // return empty
+		return "", "", err
 	}
 	for _, line := range contents {
 		field := strings.Split(line, "=")
@@ -256,7 +264,11 @@ func getOSRelease(client *sftp.Client) (platform string, version string, err err
 
 func getLSB(sshClient *ssh.Client, sftpClient *sftp.Client) (*LSB, error) {
 	ret := &LSB{}
-	if common.RemotePathExists(sftpClient, common.HostEtc("lsb-release")) {
+	exists, err := common.RemotePathExists(sftpClient, common.HostEtc("lsb-release"))
+	if err != nil {
+		return nil, err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("lsb-release"))
 		if err != nil {
 			return ret, err // return empty
@@ -277,29 +289,34 @@ func getLSB(sshClient *ssh.Client, sftpClient *sftp.Client) (*LSB, error) {
 				ret.Description = field[1]
 			}
 		}
-	} else if common.RemotePathExists(sftpClient, "/usr/bin/lsb_release") {
-		invoker := common.RemoteInvoke{Client: sshClient}
-		out, err := invoker.Command("lsb_release")
+	} else {
+		exists, err := common.RemotePathExists(sftpClient, "/usr/bin/lsb_release")
 		if err != nil {
-			return ret, err
+			return nil, err
 		}
-		for _, line := range strings.Split(string(out), "\n") {
-			field := strings.Split(line, ":")
-			if len(field) < 2 {
-				continue
+		if exists {
+			invoker := common.RemoteInvoke{Client: sshClient}
+			out, err := invoker.Command("lsb_release")
+			if err != nil {
+				return ret, err
 			}
-			switch field[0] {
-			case "Distributor ID":
-				ret.ID = field[1]
-			case "Release":
-				ret.Release = field[1]
-			case "Codename":
-				ret.Codename = field[1]
-			case "Description":
-				ret.Description = field[1]
+			for _, line := range strings.Split(string(out), "\n") {
+				field := strings.Split(line, ":")
+				if len(field) < 2 {
+					continue
+				}
+				switch field[0] {
+				case "Distributor ID":
+					ret.ID = field[1]
+				case "Release":
+					ret.Release = field[1]
+				case "Codename":
+					ret.Codename = field[1]
+				case "Description":
+					ret.Description = field[1]
+				}
 			}
 		}
-
 	}
 
 	return ret, nil
@@ -316,26 +333,26 @@ func PlatformInformationWithContext(ctx context.Context, sshClient *ssh.Client, 
 		lsb = &LSB{}
 	}
 
-	if common.RemotePathExists(sftpClient, common.HostEtc("oracle-release")) {
+	if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("oracle-release")); err == nil && exists {
 		platform = "oracle"
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("oracle-release"))
 		if err == nil {
 			version = getRedhatishVersion(contents)
 		}
 
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("enterprise-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("enterprise-release")); err == nil && exists {
 		platform = "oracle"
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("enterprise-release"))
 		if err == nil {
 			version = getRedhatishVersion(contents)
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("slackware-version")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("slackware-version")); err == nil && exists {
 		platform = "slackware"
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("slackware-version"))
 		if err == nil {
 			version = getSlackwareVersion(contents)
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("debian_version")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("debian_version")); err == nil && exists {
 		if lsb.ID == "Ubuntu" {
 			platform = "ubuntu"
 			version = lsb.Release
@@ -343,7 +360,7 @@ func PlatformInformationWithContext(ctx context.Context, sshClient *ssh.Client, 
 			platform = "linuxmint"
 			version = lsb.Release
 		} else {
-			if common.RemotePathExists(sftpClient, "/usr/bin/raspi-config") {
+			if exists, err := common.RemotePathExists(sftpClient, "/usr/bin/raspi-config"); err == nil && exists {
 				platform = "raspbian"
 			} else {
 				platform = "debian"
@@ -353,41 +370,41 @@ func PlatformInformationWithContext(ctx context.Context, sshClient *ssh.Client, 
 				version = contents[0]
 			}
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("redhat-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("redhat-release")); err == nil && exists {
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("redhat-release"))
 		if err == nil {
 			version = getRedhatishVersion(contents)
 			platform = getRedhatishPlatform(contents)
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("system-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("system-release")); err == nil && exists {
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("system-release"))
 		if err == nil {
 			version = getRedhatishVersion(contents)
 			platform = getRedhatishPlatform(contents)
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("gentoo-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("gentoo-release")); err == nil && exists {
 		platform = "gentoo"
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("gentoo-release"))
 		if err == nil {
 			version = getRedhatishVersion(contents)
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("SuSE-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("SuSE-release")); err == nil && exists {
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("SuSE-release"))
 		if err == nil {
 			version = getSuseVersion(contents)
 			platform = getSusePlatform(contents)
 		}
 		// TODO: slackware detecion
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("arch-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("arch-release")); err == nil && exists {
 		platform = "arch"
 		version = lsb.Release
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("alpine-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("alpine-release")); err == nil && exists {
 		platform = "alpine"
 		contents, err := common.RemoteReadLines(sftpClient, common.HostEtc("alpine-release"))
 		if err == nil && len(contents) > 0 {
 			version = contents[0]
 		}
-	} else if common.RemotePathExists(sftpClient, common.HostEtc("os-release")) {
+	} else if exists, err := common.RemotePathExists(sftpClient, common.HostEtc("os-release")); err == nil && exists {
 		p, v, err := getOSRelease(sftpClient)
 		if err == nil {
 			platform = p
@@ -443,7 +460,11 @@ func KernelVersion(client *sftp.Client) (version string, err error) {
 
 func KernelVersionWithContext(ctx context.Context, client *sftp.Client) (version string, err error) {
 	filename := common.HostProc("sys/kernel/osrelease")
-	if common.RemotePathExists(client, filename) {
+	exists, err := common.RemotePathExists(client, filename)
+	if err != nil {
+		return "", err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(client, filename)
 		if err != nil {
 			return "", err
@@ -453,7 +474,6 @@ func KernelVersionWithContext(ctx context.Context, client *sftp.Client) (version
 			version = contents[0]
 		}
 	}
-
 	return version, nil
 }
 
@@ -515,96 +535,140 @@ func VirtualizationWithContext(ctx context.Context, client *sftp.Client) (string
 	var role string
 
 	filename := common.HostProc("xen")
-	if common.RemotePathExists(client, filename) {
+	exists, err := common.RemotePathExists(client, filename)
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		system = "xen"
 		role = "guest" // assume guest
-
-		if common.RemotePathExists(client, filepath.Join(filename, "capabilities")) {
+		exists, err := common.RemotePathExists(client, filepath.Join(filename, "capabilities"))
+		if err != nil {
+			return "", "", err
+		}
+		if exists {
 			contents, err := common.RemoteReadLines(client, filepath.Join(filename, "capabilities"))
-			if err == nil {
-				if common.StringsContains(contents, "control_d") {
-					role = "host"
-				}
+			if err != nil {
+				return "", "", err
+			}
+			if common.StringsContains(contents, "control_d") {
+				role = "host"
 			}
 		}
 	}
 
 	filename = common.HostProc("modules")
-	if common.RemotePathExists(client, filename) {
+	exists, err = common.RemotePathExists(client, filename)
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(client, filename)
-		if err == nil {
-			if common.StringsContains(contents, "kvm") {
-				system = "kvm"
-				role = "host"
-			} else if common.StringsContains(contents, "vboxdrv") {
-				system = "vbox"
-				role = "host"
-			} else if common.StringsContains(contents, "vboxguest") {
-				system = "vbox"
-				role = "guest"
-			} else if common.StringsContains(contents, "vmware") {
-				system = "vmware"
-				role = "guest"
-			}
+		if err != nil {
+			return "", "", err
+		}
+		if common.StringsContains(contents, "kvm") {
+			system = "kvm"
+			role = "host"
+		} else if common.StringsContains(contents, "vboxdrv") {
+			system = "vbox"
+			role = "host"
+		} else if common.StringsContains(contents, "vboxguest") {
+			system = "vbox"
+			role = "guest"
+		} else if common.StringsContains(contents, "vmware") {
+			system = "vmware"
+			role = "guest"
 		}
 	}
 
 	filename = common.HostProc("cpuinfo")
-	if common.RemotePathExists(client, filename) {
+	exists, err = common.RemotePathExists(client, filename)
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(client, filename)
-		if err == nil {
-			if common.StringsContains(contents, "QEMU Virtual CPU") ||
-				common.StringsContains(contents, "Common KVM processor") ||
-				common.StringsContains(contents, "Common 32-bit KVM processor") {
-				system = "kvm"
-				role = "guest"
-			}
+		if err != nil {
+			return "", "", err
+		}
+		if common.StringsContains(contents, "QEMU Virtual CPU") ||
+			common.StringsContains(contents, "Common KVM processor") ||
+			common.StringsContains(contents, "Common 32-bit KVM processor") {
+			system = "kvm"
+			role = "guest"
 		}
 	}
 
 	filename = common.HostProc()
-	if common.RemotePathExists(client, filepath.Join(filename, "bc", "0")) {
+	exists, err = common.RemotePathExists(client, filepath.Join(filename, "bc", "0"))
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		system = "openvz"
 		role = "host"
-	} else if common.RemotePathExists(client, filepath.Join(filename, "vz")) {
-		system = "openvz"
-		role = "guest"
+	} else {
+		exists, err := common.RemotePathExists(client, filepath.Join(filename, "vz"))
+		if err != nil {
+			return "", "", err
+		}
+		if exists {
+			system = "openvz"
+			role = "guest"
+		}
 	}
-
 	// not use dmidecode because it requires root
-	if common.RemotePathExists(client, filepath.Join(filename, "self", "status")) {
+	exists, err = common.RemotePathExists(client, filepath.Join(filename, "self", "status"))
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(client, filepath.Join(filename, "self", "status"))
-		if err == nil {
-			if common.StringsContains(contents, "s_context:") ||
-				common.StringsContains(contents, "VxID:") {
-				system = "linux-vserver"
-			}
-			// TODO: guest or host
+		if err != nil {
+			return "", "", err
 		}
+		if common.StringsContains(contents, "s_context:") ||
+			common.StringsContains(contents, "VxID:") {
+			system = "linux-vserver"
+		}
+		// TODO: guest or host
 	}
 
-	if common.RemotePathExists(client, filepath.Join(filename, "self", "cgroup")) {
+	exists, err = common.RemotePathExists(client, filepath.Join(filename, "self", "cgroup"))
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		contents, err := common.RemoteReadLines(client, filepath.Join(filename, "self", "cgroup"))
-		if err == nil {
-			if common.StringsContains(contents, "lxc") {
-				system = "lxc"
-				role = "guest"
-			} else if common.StringsContains(contents, "docker") {
-				system = "docker"
-				role = "guest"
-			} else if common.StringsContains(contents, "machine-rkt") {
-				system = "rkt"
-				role = "guest"
-			} else if common.PathExists("/usr/bin/lxc-version") {
-				system = "lxc"
-				role = "host"
-			}
+		if err != nil {
+			return "", "", err
+		}
+		if common.StringsContains(contents, "lxc") {
+			system = "lxc"
+			role = "guest"
+		} else if common.StringsContains(contents, "docker") {
+			system = "docker"
+			role = "guest"
+		} else if common.StringsContains(contents, "machine-rkt") {
+			system = "rkt"
+			role = "guest"
+		} else if common.PathExists("/usr/bin/lxc-version") {
+			system = "lxc"
+			role = "host"
 		}
 	}
 
-	if common.RemotePathExists(client, common.HostEtc("os-release")) {
+	exists, err = common.RemotePathExists(client, common.HostEtc("os-release"))
+	if err != nil {
+		return "", "", err
+	}
+	if exists {
 		p, _, err := getOSRelease(client)
-		if err == nil && p == "coreos" {
+		if err != nil {
+			return "", "", err
+		}
+		if p == "coreos" {
 			system = "rkt" // Is it true?
 			role = "host"
 		}

@@ -2,7 +2,35 @@ package disk
 
 import (
 	"encoding/json"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
+
+type Disk struct {
+	sftpClient *sftp.Client
+	sshClient  *ssh.Client
+}
+
+func NewDisk(sshClient *ssh.Client, sftpClient *sftp.Client) *Disk {
+	return &Disk{sshClient: sshClient, sftpClient: sftpClient}
+}
+
+func (d *Disk) Label(name string) (string, error) {
+	return GetLabel(d.sftpClient, name)
+}
+
+func (d *Disk) IOCounters(names ...string) (map[string]IOCountersStat, error) {
+	return IOCounters(d.sftpClient, names...)
+}
+
+func (d *Disk) Partitions(all bool) ([]PartitionStat, error) {
+	return Partitions(d.sftpClient, all)
+}
+
+func (d *Disk) Usage(path string) (*UsageStat, error) {
+	return Usage(d.sftpClient, path)
+}
 
 type UsageStat struct {
 	Path              string  `json:"path"`

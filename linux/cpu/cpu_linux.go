@@ -19,20 +19,20 @@ type CPU struct {
 	sftpClient *sftp.Client
 }
 
-func NewCPU(sshclient *ssh.Client, sftpClient *sftp.Client) *CPU {
+func NewCPU(sshClient *ssh.Client, sftpClient *sftp.Client) (*CPU, error) {
 	invoke := common.RemoteInvoke{
-		Client: sshclient,
+		Client: sshClient,
 	}
-	var tick float64 = 100
 	out, err := invoke.CommandWithContext(context.Background(), "getconf", "CLK_TCK")
-	// ignore errors
-	if err == nil {
-		i, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-		if err == nil {
-			tick = i
-		}
+	if err != nil {
+		return nil, err
 	}
-	return &CPU{tick: tick, sftpClient: sftpClient}
+	// ignore errors
+	tick, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		tick = 100
+	}
+	return &CPU{tick: tick, sftpClient: sftpClient}, nil
 }
 
 func (c *CPU) Times(percpu bool) ([]TimesStat, error) {
@@ -113,13 +113,13 @@ func finishCPUInfo(client *sftp.Client, c *InfoStat) error {
 // Sockets often come with many physical CPU cores.
 // For example a single socket board with two cores each with HT will
 // return 4 CPUInfoStat structs on Linux and the "Cores" field set to 1.
-func Info(client *sftp.Client) ([]InfoStat, error) {
-	return InfoWithContext(context.Background(), client)
+func (cpu *CPU) Info() ([]InfoStat, error) {
+	return cpu.InfoWithContext(context.Background())
 }
 
-func InfoWithContext(ctx context.Context, client *sftp.Client) ([]InfoStat, error) {
+func (cpu *CPU) InfoWithContext(ctx context.Context) ([]InfoStat, error) {
 	filename := common.HostProc("cpuinfo")
-	lines, _ := common.RemoteReadLines(client, filename)
+	lines, _ := common.RemoteReadLines(cpu.sftpClient, filename)
 
 	var ret []InfoStat
 	var processorName string
@@ -138,7 +138,7 @@ func InfoWithContext(ctx context.Context, client *sftp.Client) ([]InfoStat, erro
 			processorName = value
 		case "processor":
 			if c.CPU >= 0 {
-				err := finishCPUInfo(client, &c)
+				err := finishCPUInfo(cpu.sftpClient, &c)
 				if err != nil {
 					return ret, err
 				}
@@ -200,7 +200,7 @@ func InfoWithContext(ctx context.Context, client *sftp.Client) ([]InfoStat, erro
 		}
 	}
 	if c.CPU >= 0 {
-		err := finishCPUInfo(client, &c)
+		err := finishCPUInfo(cpu.sftpClient, &c)
 		if err != nil {
 			return ret, err
 		}
@@ -288,12 +288,16 @@ func parseStatLine(line string, tick float64) (*TimesStat, error) {
 	return ct, nil
 }
 
-func CountsWithContext(ctx context.Context, client *sftp.Client, logical bool) (int, error) {
+func (cpu *CPU) Counts(logical bool) (int, error) {
+	return cpu.CountsWithContext(context.Background(), logical)
+}
+
+func (cpu *CPU) CountsWithContext(ctx context.Context, logical bool) (int, error) {
 	if logical {
 		ret := 0
 		// https://github.com/giampaolo/psutil/blob/d01a9eaa35a8aadf6c519839e987a49d8be2d891/psutil/_pslinux.py#L599
 		procCpuinfo := common.HostProc("cpuinfo")
-		lines, err := common.RemoteReadLines(client, procCpuinfo)
+		lines, err := common.RemoteReadLines(cpu.sftpClient, procCpuinfo)
 		if err == nil {
 			for _, line := range lines {
 				line = strings.ToLower(line)
@@ -304,7 +308,7 @@ func CountsWithContext(ctx context.Context, client *sftp.Client, logical bool) (
 		}
 		if ret == 0 {
 			procStat := common.HostProc("stat")
-			lines, err = common.RemoteReadLines(client, procStat)
+			lines, err = common.RemoteReadLines(cpu.sftpClient, procStat)
 			if err != nil {
 				return 0, err
 			}
@@ -318,7 +322,7 @@ func CountsWithContext(ctx context.Context, client *sftp.Client, logical bool) (
 	}
 	// physical cores https://github.com/giampaolo/psutil/blob/d01a9eaa35a8aadf6c519839e987a49d8be2d891/psutil/_pslinux.py#L628
 	filename := common.HostProc("cpuinfo")
-	lines, err := common.RemoteReadLines(client, filename)
+	lines, err := common.RemoteReadLines(cpu.sftpClient, filename)
 	if err != nil {
 		return 0, err
 	}

@@ -120,7 +120,7 @@ const (
 // Partitions returns disk partitions. If all is false, returns
 // physical devices only (e.g. hard disks, cd-rom drives, USB keys)
 // and ignore all others (e.g. memory partitions such as /dev/shm)
-func Partitions(all bool, client *sftp.Client) ([]PartitionStat, error) {
+func Partitions(client *sftp.Client, all bool) ([]PartitionStat, error) {
 	return PartitionsWithContext(context.Background(), client, all)
 }
 
@@ -329,7 +329,10 @@ func IOCountersWithContext(ctx context.Context, client *sftp.Client, names ...st
 			continue
 		}
 		d.Name = name
-		d.Label = GetLabel(client, name)
+		label, err := GetLabel(client, name)
+		if err == nil {
+			d.Label = label
+		}
 		ret[name] = d
 	}
 	return ret, nil
@@ -339,18 +342,19 @@ func IOCountersWithContext(ctx context.Context, client *sftp.Client, names ...st
 // Name of device is expected, eg. /dev/sda
 // Supports label based on devicemapper name
 // See https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-block-dm
-func GetLabel(client *sftp.Client, name string) string {
+func GetLabel(client *sftp.Client, name string) (string, error) {
 	// Try label based on devicemapper name
 	dmname_filename := common.HostSys(fmt.Sprintf("block/%s/dm/name", name))
-
-	if !common.RemotePathExists(client, dmname_filename) {
-		return ""
+	exists, err := common.RemotePathExists(client, dmname_filename)
+	if err != nil {
+		return "", err
 	}
-
+	if !exists {
+		return "", nil
+	}
 	dmname, err := common.RemoteReadFile(client, dmname_filename)
 	if err != nil {
-		return ""
-	} else {
-		return strings.TrimSpace(string(dmname))
+		return "", err
 	}
+	return strings.TrimSpace(string(dmname)), nil
 }

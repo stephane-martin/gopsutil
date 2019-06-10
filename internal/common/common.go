@@ -356,11 +356,15 @@ func PathExists(filename string) bool {
 	return false
 }
 
-func RemotePathExists(client *sftp.Client, filename string) bool {
-	if _, err := client.Stat(filename); err == nil {
-		return true
+func RemotePathExists(client *sftp.Client, filename string) (bool, error) {
+	_, err := client.Stat(filename)
+	if err == nil {
+		return true, nil
 	}
-	return false
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func RemoteReadFile(client *sftp.Client, name string) ([]byte, error) {
