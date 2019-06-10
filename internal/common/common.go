@@ -45,7 +45,7 @@ type Invoker interface {
 
 type Invoke struct{}
 type RemoteInvoke struct {
-	client *ssh.Client
+	Client *ssh.Client
 }
 
 func (i Invoke) Command(name string, arg ...string) ([]byte, error) {
@@ -56,8 +56,9 @@ func (i Invoke) Command(name string, arg ...string) ([]byte, error) {
 
 func (i RemoteInvoke) Command(name string, arg ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-	defer cancel()
-	return i.CommandWithContext(ctx, name, arg...)
+	b, err := i.CommandWithContext(ctx, name, arg...)
+	cancel()
+	return b, err
 }
 
 func (i Invoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
@@ -79,7 +80,7 @@ func (i Invoke) CommandWithContext(ctx context.Context, name string, arg ...stri
 }
 
 func (i RemoteInvoke) CommandWithContext(ctx context.Context, name string, arg ...string) ([]byte, error) {
-	session, err := i.client.NewSession()
+	session, err := i.Client.NewSession()
 	if err != nil {
 		return []byte(""), err
 	}
@@ -362,6 +363,20 @@ func RemotePathExists(client *sftp.Client, filename string) bool {
 	return false
 }
 
+func RemoteReadFile(client *sftp.Client, name string) ([]byte, error) {
+	f, err := client.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var b bytes.Buffer
+	_, err = b.ReadFrom(f)
+	if err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
 //GetEnv retrieves the environment variable key. If it does not exist it returns the default.
 func GetEnv(key string, dfault string, combineWith ...string) string {
 	value := os.Getenv(key)
@@ -451,7 +466,7 @@ func RemoteLinuxDoSysctrl(client *ssh.Client, mib string) ([]string, error) {
 	return values, nil
 }
 
-func LinuxNumProcs() (uint64, error) {
+func LinuxNumProcs() (int, error) {
 	f, err := os.Open(HostProc())
 	if err != nil {
 		return 0, err
@@ -462,15 +477,15 @@ func LinuxNumProcs() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return uint64(len(list)), err
+	return len(list), err
 }
 
-func RemoteLinuxNumProcs(client *sftp.Client) (uint64, error) {
+func RemoteLinuxNumProcs(client *sftp.Client) (int, error) {
 	list, err := client.ReadDir(HostProc())
 	if err != nil {
 		return 0, err
 	}
-	return uint64(len(list)), err
+	return len(list), err
 }
 
 func CallLsofWithContext(ctx context.Context, invoke Invoker, pid int32, args ...string) ([]string, error) {
@@ -500,14 +515,14 @@ func CallLsofWithContext(ctx context.Context, invoke Invoker, pid int32, args ..
 	return ret, nil
 }
 
-func CallPgrepWithContext(ctx context.Context, invoke Invoker, pid int32) ([]int32, error) {
-	cmd := []string{"-P", strconv.Itoa(int(pid))}
+func CallPgrepWithContext(ctx context.Context, invoke Invoker, pid int) ([]int, error) {
+	cmd := []string{"-P", strconv.Itoa(pid)}
 	out, err := invoke.CommandWithContext(ctx, "pgrep", cmd...)
 	if err != nil {
-		return []int32{}, err
+		return []int{}, err
 	}
 	lines := strings.Split(string(out), "\n")
-	ret := make([]int32, 0, len(lines))
+	ret := make([]int, 0, len(lines))
 	for _, l := range lines {
 		if len(l) == 0 {
 			continue
@@ -516,7 +531,7 @@ func CallPgrepWithContext(ctx context.Context, invoke Invoker, pid int32) ([]int
 		if err != nil {
 			continue
 		}
-		ret = append(ret, int32(i))
+		ret = append(ret, i)
 	}
 	return ret, nil
 }
