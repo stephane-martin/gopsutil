@@ -23,22 +23,6 @@ func NewNet(sshClient *ssh.Client, sftpClient *sftp.Client) *Net {
 	return &Net{sshClient: sshClient, sftpClient: sftpClient}
 }
 
-func (n *Net) Interfaces() ([]InterfaceStat, error) {
-	return Interfaces(n.sshClient)
-}
-
-func (n *Net) Connections(kind string) ([]ConnectionStat, error) {
-	return Connections(n.sftpClient, kind)
-}
-
-func (n *Net) ConnectionsMax(kind string, max int) ([]ConnectionStat, error) {
-	return ConnectionsMax(n.sftpClient, kind, max)
-}
-
-func (n *Net) ConnectionsPid(kind string, pid int) ([]ConnectionStat, error) {
-	return ConnectionsPid(n.sftpClient, kind, pid)
-}
-
 type IOCountersStat struct {
 	Name        string `json:"name"`        // interface name
 	BytesSent   uint64 `json:"bytesSent"`   // number of bytes sent
@@ -162,12 +146,12 @@ func (n InterfaceAddr) String() string {
 	return string(s)
 }
 
-func Interfaces(sshClient *ssh.Client) ([]InterfaceStat, error) {
-	return InterfacesWithContext(context.Background(), sshClient)
+func (n *Net) Interfaces() ([]InterfaceStat, error) {
+	return n.InterfacesWithContext(context.Background())
 }
 
-func InterfacesWithContext(ctx context.Context, sshClient *ssh.Client) ([]InterfaceStat, error) {
-	invoke := common.RemoteInvoke{Client: sshClient}
+func (n *Net) InterfacesWithContext(ctx context.Context) ([]InterfaceStat, error) {
+	invoke := common.RemoteInvoke{Client: n.sshClient}
 	b, err := invoke.CommandWithContext(ctx, "ip", "-j", "addr", "show")
 	if err != nil {
 		return nil, err

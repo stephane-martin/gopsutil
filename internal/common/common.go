@@ -255,16 +255,27 @@ func ByteToString(orig []byte) string {
 	return string(orig[l:n])
 }
 
-// ReadInts reads contents from single line file and returns them as []int32.
 func ReadInts(filename string) ([]int64, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return []int64{}, err
 	}
 	defer f.Close()
+	return readInts(f)
+}
 
+func RemoteReadInts(c *sftp.Client, filename string) ([]int64, error) {
+	f, err := c.Open(filename)
+	if err != nil {
+		return []int64{}, err
+	}
+	defer f.Close()
+	return readInts(f)
+}
+
+// ReadInts reads contents from single line file and returns them as []int32.
+func readInts(f io.Reader) ([]int64, error) {
 	var ret []int64
-
 	r := bufio.NewReader(f)
 
 	// The int files that this is concerned with should only be one liners.

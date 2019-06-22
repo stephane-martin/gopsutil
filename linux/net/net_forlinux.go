@@ -21,21 +21,21 @@ import (
 // return only sum of all information (which name is 'all'). If true,
 // every network interface installed on the system is returned
 // separately.
-func IOCounters(sftpClient *sftp.Client, pernic bool) ([]IOCountersStat, error) {
-	return IOCountersWithContext(context.Background(), sftpClient, pernic)
+func (n *Net) IOCounters(pernic bool) ([]IOCountersStat, error) {
+	return n.IOCountersWithContext(context.Background(), pernic)
 }
 
-func IOCountersWithContext(ctx context.Context, sftpClient *sftp.Client, pernic bool) ([]IOCountersStat, error) {
+func (n *Net) IOCountersWithContext(ctx context.Context, pernic bool) ([]IOCountersStat, error) {
 	filename := common.HostProc("net/dev")
-	return IOCountersByFile(sftpClient, pernic, filename)
+	return n.IOCountersByFile(pernic, filename)
 }
 
-func IOCountersByFile(sftpClient *sftp.Client, pernic bool, filename string) ([]IOCountersStat, error) {
-	return IOCountersByFileWithContext(context.Background(), sftpClient, pernic, filename)
+func (n *Net) IOCountersByFile(pernic bool, filename string) ([]IOCountersStat, error) {
+	return n.IOCountersByFileWithContext(context.Background(), pernic, filename)
 }
 
-func IOCountersByFileWithContext(ctx context.Context, sftpClient *sftp.Client, pernic bool, filename string) ([]IOCountersStat, error) {
-	lines, err := common.RemoteReadLines(sftpClient, filename)
+func (n *Net) IOCountersByFileWithContext(ctx context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
+	lines, err := common.RemoteReadLines(n.sftpClient, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -138,11 +138,11 @@ var netProtocols = []string{
 // just the protocols in the list are returned.
 // Available protocols:
 //   ip,icmp,icmpmsg,tcp,udp,udplite
-func ProtoCounters(sftpClient *sftp.Client, protocols []string) ([]ProtoCountersStat, error) {
-	return ProtoCountersWithContext(context.Background(), sftpClient, protocols)
+func (n *Net) ProtoCounters(protocols []string) ([]ProtoCountersStat, error) {
+	return n.ProtoCountersWithContext(context.Background(), protocols)
 }
 
-func ProtoCountersWithContext(ctx context.Context, sftpClient *sftp.Client, protocols []string) ([]ProtoCountersStat, error) {
+func (n *Net) ProtoCountersWithContext(ctx context.Context, protocols []string) ([]ProtoCountersStat, error) {
 	if len(protocols) == 0 {
 		protocols = netProtocols
 	}
@@ -154,7 +154,7 @@ func ProtoCountersWithContext(ctx context.Context, sftpClient *sftp.Client, prot
 	}
 
 	filename := common.HostProc("net/snmp")
-	lines, err := common.RemoteReadLines(sftpClient, filename)
+	lines, err := common.RemoteReadLines(n.sftpClient, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -201,22 +201,22 @@ func ProtoCountersWithContext(ctx context.Context, sftpClient *sftp.Client, prot
 // NetFilterCounters returns iptables conntrack statistics
 // the currently in use conntrack count and the max.
 // If the file does not exist or is invalid it will return nil.
-func FilterCounters() ([]FilterStat, error) {
-	return FilterCountersWithContext(context.Background())
+func (n *Net) FilterCounters() ([]FilterStat, error) {
+	return n.FilterCountersWithContext(context.Background())
 }
 
-func FilterCountersWithContext(ctx context.Context) ([]FilterStat, error) {
+func (n *Net) FilterCountersWithContext(ctx context.Context) ([]FilterStat, error) {
 	countfile := common.HostProc("sys/net/netfilter/nf_conntrack_count")
 	maxfile := common.HostProc("sys/net/netfilter/nf_conntrack_max")
 
-	count, err := common.ReadInts(countfile)
+	count, err := common.RemoteReadInts(n.sftpClient, countfile)
 
 	if err != nil {
 		return nil, err
 	}
 	stats := make([]FilterStat, 0, 1)
 
-	max, err := common.ReadInts(maxfile)
+	max, err := common.RemoteReadInts(n.sftpClient, maxfile)
 	if err != nil {
 		return nil, err
 	}
@@ -308,30 +308,30 @@ type connTmp struct {
 }
 
 // Return a list of network connections opened.
-func Connections(sftpClient *sftp.Client, kind string) ([]ConnectionStat, error) {
-	return ConnectionsWithContext(context.Background(), sftpClient, kind)
+func (n *Net) Connections(kind string) ([]ConnectionStat, error) {
+	return n.ConnectionsWithContext(context.Background(), kind)
 }
 
-func ConnectionsWithContext(ctx context.Context, sftpClient *sftp.Client, kind string) ([]ConnectionStat, error) {
-	return ConnectionsPid(sftpClient, kind, 0)
+func (n *Net) ConnectionsWithContext(ctx context.Context, kind string) ([]ConnectionStat, error) {
+	return n.ConnectionsPid(kind, 0)
 }
 
 // Return a list of network connections opened returning at most `max`
 // connections for each running process.
-func ConnectionsMax(sftpClient *sftp.Client, kind string, max int) ([]ConnectionStat, error) {
-	return ConnectionsMaxWithContext(context.Background(), sftpClient, kind, max)
+func (n *Net) ConnectionsMax(kind string, max int) ([]ConnectionStat, error) {
+	return n.ConnectionsMaxWithContext(context.Background(), kind, max)
 }
 
-func ConnectionsMaxWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, max int) ([]ConnectionStat, error) {
-	return ConnectionsPidMax(sftpClient, kind, 0, max)
+func (n *Net) ConnectionsMaxWithContext(ctx context.Context, kind string, max int) ([]ConnectionStat, error) {
+	return n.ConnectionsPidMax(kind, 0, max)
 }
 
 // Return a list of network connections opened by a process.
-func ConnectionsPid(sftpClient *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
-	return ConnectionsPidWithContext(context.Background(), sftpClient, kind, pid)
+func (n *Net) ConnectionsPid(kind string, pid int) ([]ConnectionStat, error) {
+	return n.ConnectionsPidWithContext(context.Background(), kind, pid)
 }
 
-func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
+func (n *Net) ConnectionsPidWithContext(ctx context.Context, kind string, pid int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -340,9 +340,9 @@ func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kin
 	var err error
 	var inodes map[string][]inodeMap
 	if pid == 0 {
-		inodes, err = getProcInodesAll(sftpClient, root, 0)
+		inodes, err = n.getProcInodesAll(root, 0)
 	} else {
-		inodes, err = getProcInodes(sftpClient, root, pid, 0)
+		inodes, err = getProcInodes(n.sftpClient, root, pid, 0)
 		if len(inodes) == 0 {
 			// no connection for the pid
 			return []ConnectionStat{}, nil
@@ -351,15 +351,15 @@ func ConnectionsPidWithContext(ctx context.Context, sftpClient *sftp.Client, kin
 	if err != nil {
 		return nil, fmt.Errorf("cound not get pid(s), %d: %s", pid, err)
 	}
-	return statsFromInodes(sftpClient, root, pid, tmap, inodes)
+	return statsFromInodes(n.sftpClient, root, pid, tmap, inodes)
 }
 
 // Return up to `max` network connections opened by a process.
-func ConnectionsPidMax(sftpClient *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
-	return ConnectionsPidMaxWithContext(context.Background(), sftpClient, kind, pid, max)
+func (n *Net) ConnectionsPidMax(kind string, pid int, max int) ([]ConnectionStat, error) {
+	return n.ConnectionsPidMaxWithContext(context.Background(), kind, pid, max)
 }
 
-func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
+func (n *Net) ConnectionsPidMaxWithContext(ctx context.Context, kind string, pid int, max int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -368,9 +368,9 @@ func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, 
 	var err error
 	var inodes map[string][]inodeMap
 	if pid == 0 {
-		inodes, err = getProcInodesAll(sftpClient, root, max)
+		inodes, err = n.getProcInodesAll(root, max)
 	} else {
-		inodes, err = getProcInodes(sftpClient, root, pid, max)
+		inodes, err = getProcInodes(n.sftpClient, root, pid, max)
 		if len(inodes) == 0 {
 			// no connection for the pid
 			return []ConnectionStat{}, nil
@@ -379,7 +379,7 @@ func ConnectionsPidMaxWithContext(ctx context.Context, sftpClient *sftp.Client, 
 	if err != nil {
 		return nil, fmt.Errorf("cound not get pid(s), %d", pid)
 	}
-	return statsFromInodes(sftpClient, root, pid, tmap, inodes)
+	return statsFromInodes(n.sftpClient, root, pid, tmap, inodes)
 }
 
 func statsFromInodes(sftpClient *sftp.Client, root string, pid int, tmap []netConnectionKindType, inodes map[string][]inodeMap) ([]ConnectionStat, error) {
@@ -485,25 +485,18 @@ func getProcInodes(sftpClient *sftp.Client, root string, pid int, max int) (map[
 // Note: this is a copy of process_linux.Pids()
 // FIXME: Import process occures import cycle.
 // move to common made other platform breaking. Need consider.
-func Pids() ([]int, error) {
-	return PidsWithContext(context.Background())
+func (n *Net) Pids() ([]int, error) {
+	return n.PidsWithContext(context.Background())
 }
 
-func PidsWithContext(ctx context.Context) ([]int, error) {
+func (n *Net) PidsWithContext(ctx context.Context) ([]int, error) {
 	var ret []int
-
-	d, err := os.Open(common.HostProc())
+	files, err := n.sftpClient.ReadDir(common.HostProc())
 	if err != nil {
 		return nil, err
 	}
-	defer d.Close()
-
-	fnames, err := d.Readdirnames(-1)
-	if err != nil {
-		return nil, err
-	}
-	for _, fname := range fnames {
-		pid, err := strconv.ParseInt(fname, 10, 32)
+	for _, f := range files {
+		pid, err := strconv.ParseInt(f.Name(), 10, 32)
 		if err != nil {
 			// if not numeric name, just skip
 			continue
@@ -562,15 +555,15 @@ func (p *process) fillFromStatus(sftpClient *sftp.Client) error {
 	return nil
 }
 
-func getProcInodesAll(sftpClient *sftp.Client, root string, max int) (map[string][]inodeMap, error) {
-	pids, err := Pids()
+func (n *Net) getProcInodesAll(root string, max int) (map[string][]inodeMap, error) {
+	pids, err := n.Pids()
 	if err != nil {
 		return nil, err
 	}
 	ret := make(map[string][]inodeMap)
 
 	for _, pid := range pids {
-		t, err := getProcInodes(sftpClient, root, pid, max)
+		t, err := getProcInodes(n.sftpClient, root, pid, max)
 		if err != nil {
 			// skip if permission error or no longer exists
 			if os.IsPermission(err) || os.IsNotExist(err) {
