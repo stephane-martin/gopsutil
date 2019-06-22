@@ -34,8 +34,16 @@ func (n *Net) IOCountersByFile(pernic bool, filename string) ([]IOCountersStat, 
 	return n.IOCountersByFileWithContext(context.Background(), pernic, filename)
 }
 
+func IOCountersByFile(c *sftp.Client, pernic bool, filename string) ([]IOCountersStat, error) {
+	return IOCountersByFileWithContext(context.Background(), c, pernic, filename)
+}
+
 func (n *Net) IOCountersByFileWithContext(ctx context.Context, pernic bool, filename string) ([]IOCountersStat, error) {
-	lines, err := common.RemoteReadLines(n.sftpClient, filename)
+	return IOCountersByFileWithContext(ctx, n.sftpClient, pernic, filename)
+}
+
+func IOCountersByFileWithContext(ctx context.Context, c *sftp.Client, pernic bool, filename string) ([]IOCountersStat, error) {
+	lines, err := common.RemoteReadLines(c, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +339,11 @@ func (n *Net) ConnectionsPid(kind string, pid int) ([]ConnectionStat, error) {
 	return n.ConnectionsPidWithContext(context.Background(), kind, pid)
 }
 
-func (n *Net) ConnectionsPidWithContext(ctx context.Context, kind string, pid int) ([]ConnectionStat, error) {
+func ConnectionsPid(c *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
+	return ConnectionsPidWithContext(context.Background(), c, kind, pid)
+}
+
+func ConnectionsPidWithContext(ctx context.Context, c *sftp.Client, kind string, pid int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -340,9 +352,9 @@ func (n *Net) ConnectionsPidWithContext(ctx context.Context, kind string, pid in
 	var err error
 	var inodes map[string][]inodeMap
 	if pid == 0 {
-		inodes, err = n.getProcInodesAll(root, 0)
+		inodes, err = getProcInodesAll(c, root, 0)
 	} else {
-		inodes, err = getProcInodes(n.sftpClient, root, pid, 0)
+		inodes, err = getProcInodes(c, root, pid, 0)
 		if len(inodes) == 0 {
 			// no connection for the pid
 			return []ConnectionStat{}, nil
@@ -351,7 +363,11 @@ func (n *Net) ConnectionsPidWithContext(ctx context.Context, kind string, pid in
 	if err != nil {
 		return nil, fmt.Errorf("cound not get pid(s), %d: %s", pid, err)
 	}
-	return statsFromInodes(n.sftpClient, root, pid, tmap, inodes)
+	return statsFromInodes(c, root, pid, tmap, inodes)
+}
+
+func (n *Net) ConnectionsPidWithContext(ctx context.Context, kind string, pid int) ([]ConnectionStat, error) {
+	return ConnectionsPidWithContext(ctx, n.sftpClient, kind, pid)
 }
 
 // Return up to `max` network connections opened by a process.
@@ -359,7 +375,15 @@ func (n *Net) ConnectionsPidMax(kind string, pid int, max int) ([]ConnectionStat
 	return n.ConnectionsPidMaxWithContext(context.Background(), kind, pid, max)
 }
 
+func ConnectionsPidMax(c *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
+	return ConnectionsPidMaxWithContext(context.Background(), c, kind, pid, max)
+}
+
 func (n *Net) ConnectionsPidMaxWithContext(ctx context.Context, kind string, pid int, max int) ([]ConnectionStat, error) {
+	return ConnectionsPidMaxWithContext(ctx, n.sftpClient, kind, pid, max)
+}
+
+func ConnectionsPidMaxWithContext(ctx context.Context, c *sftp.Client, kind string, pid int, max int) ([]ConnectionStat, error) {
 	tmap, ok := netConnectionKindMap[kind]
 	if !ok {
 		return nil, fmt.Errorf("invalid kind, %s", kind)
@@ -368,9 +392,9 @@ func (n *Net) ConnectionsPidMaxWithContext(ctx context.Context, kind string, pid
 	var err error
 	var inodes map[string][]inodeMap
 	if pid == 0 {
-		inodes, err = n.getProcInodesAll(root, max)
+		inodes, err = getProcInodesAll(c, root, max)
 	} else {
-		inodes, err = getProcInodes(n.sftpClient, root, pid, max)
+		inodes, err = getProcInodes(c, root, pid, max)
 		if len(inodes) == 0 {
 			// no connection for the pid
 			return []ConnectionStat{}, nil
@@ -379,7 +403,7 @@ func (n *Net) ConnectionsPidMaxWithContext(ctx context.Context, kind string, pid
 	if err != nil {
 		return nil, fmt.Errorf("cound not get pid(s), %d", pid)
 	}
-	return statsFromInodes(n.sftpClient, root, pid, tmap, inodes)
+	return statsFromInodes(c, root, pid, tmap, inodes)
 }
 
 func statsFromInodes(sftpClient *sftp.Client, root string, pid int, tmap []netConnectionKindType, inodes map[string][]inodeMap) ([]ConnectionStat, error) {
@@ -489,9 +513,18 @@ func (n *Net) Pids() ([]int, error) {
 	return n.PidsWithContext(context.Background())
 }
 
+func Pids(c *sftp.Client) ([]int, error) {
+	return PidsWithContext(context.Background(), c)
+}
+
 func (n *Net) PidsWithContext(ctx context.Context) ([]int, error) {
+	return PidsWithContext(ctx, n.sftpClient)
+}
+
+func PidsWithContext(ctx context.Context, c *sftp.Client) ([]int, error) {
+
 	var ret []int
-	files, err := n.sftpClient.ReadDir(common.HostProc())
+	files, err := c.ReadDir(common.HostProc())
 	if err != nil {
 		return nil, err
 	}
@@ -556,14 +589,18 @@ func (p *process) fillFromStatus(sftpClient *sftp.Client) error {
 }
 
 func (n *Net) getProcInodesAll(root string, max int) (map[string][]inodeMap, error) {
-	pids, err := n.Pids()
+	return getProcInodesAll(n.sftpClient, root, max)
+}
+
+func getProcInodesAll(c *sftp.Client, root string, max int) (map[string][]inodeMap, error) {
+	pids, err := Pids(c)
 	if err != nil {
 		return nil, err
 	}
 	ret := make(map[string][]inodeMap)
 
 	for _, pid := range pids {
-		t, err := getProcInodes(n.sftpClient, root, pid, max)
+		t, err := getProcInodes(c, root, pid, max)
 		if err != nil {
 			// skip if permission error or no longer exists
 			if os.IsPermission(err) || os.IsNotExist(err) {
