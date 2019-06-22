@@ -1,5 +1,3 @@
-// +build linux
-
 package docker
 
 import (
@@ -11,19 +9,38 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
-	cpu "github.com/stephane-martin/gopsutil/cpu"
 	"github.com/stephane-martin/gopsutil/internal/common"
+	"github.com/stephane-martin/gopsutil/linux/cpu"
 	"golang.org/x/crypto/ssh"
 )
 
-// GetDockerStat returns a list of Docker basic stats.
-// This requires certain permission.
-func GetDockerStat(sshClient *ssh.Client) ([]CgroupDockerStat, error) {
-	return GetDockerStatWithContext(context.Background(), sshClient)
+type Docker struct {
+	tick       float64
+	sftpClient *sftp.Client
+	sshClient  *ssh.Client
 }
 
-func GetDockerStatWithContext(ctx context.Context, sshClient *ssh.Client) ([]CgroupDockerStat, error) {
-	invoke := common.RemoteInvoke{Client: sshClient}
+func NewDocker(sshClient *ssh.Client, sftpClient *sftp.Client) (*Docker, error) {
+	out, err := common.SSHInvoke(sshClient).CommandWithContext(context.Background(), "getconf", "CLK_TCK")
+	if err != nil {
+		return nil, err
+	}
+	// ignore errors
+	tick, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		tick = 100
+	}
+	return &Docker{tick: tick, sftpClient: sftpClient, sshClient: sshClient}, nil
+}
+
+// GetDockerStat returns a list of Docker basic stats.
+// This requires certain permission.
+func (d Docker) GetStat() ([]CgroupDockerStat, error) {
+	return d.GetDockerStatWithContext(context.Background())
+}
+
+func (d Docker) GetDockerStatWithContext(ctx context.Context) ([]CgroupDockerStat, error) {
+	invoke := common.RemoteInvoke{Client: d.sshClient}
 	out, err := invoke.CommandWithContext(ctx, "docker", "ps", "-a", "--no-trunc", "--format", "{{.ID}}|{{.Image}}|{{.Names}}|{{.Status}}")
 	if err != nil {
 		return []CgroupDockerStat{}, err
@@ -42,7 +59,7 @@ func GetDockerStatWithContext(ctx context.Context, sshClient *ssh.Client) ([]Cgr
 		names := strings.Split(cols[2], ",")
 		stat := CgroupDockerStat{
 			ContainerID: cols[0],
-			Name:        names[0],
+			Name:        names[1],
 			Image:       cols[1],
 			Status:      cols[3],
 			Running:     strings.Contains(cols[3], "Up"),
@@ -55,12 +72,12 @@ func GetDockerStatWithContext(ctx context.Context, sshClient *ssh.Client) ([]Cgr
 
 // GetDockerIDList returnes a list of DockerID.
 // This requires certain permission.
-func GetDockerIDList(sshClient *ssh.Client) ([]string, error) {
-	return GetDockerIDListWithContext(context.Background(), sshClient)
+func (d Docker) GetDockerIDList() ([]string, error) {
+	return d.GetDockerIDListWithContext(context.Background())
 }
 
-func GetDockerIDListWithContext(ctx context.Context, sshClient *ssh.Client) ([]string, error) {
-	invoke := common.RemoteInvoke{Client: sshClient}
+func (d Docker) GetDockerIDListWithContext(ctx context.Context) ([]string, error) {
+	invoke := common.RemoteInvoke{Client: d.sshClient}
 	out, err := invoke.CommandWithContext(ctx, "docker", "ps", "-q", "--no-trunc")
 	if err != nil {
 		return []string{}, err
@@ -78,25 +95,25 @@ func GetDockerIDListWithContext(ctx context.Context, sshClient *ssh.Client) ([]s
 	return ret, nil
 }
 
-// CgroupCPU returnes specified cgroup id CPU status.
+// CgroupCPU returns specified cgroup id CPU status.
 // containerID is same as docker id if you use docker.
 // If you use container via systemd.slice, you could use
 // containerID = docker-<container id>.scope and base=/sys/fs/cgroup/cpuacct/system.slice/
-func CgroupCPU(sftpClient *sftp.Client, containerID string, base string, tick float64) (*cpu.TimesStat, error) {
-	return CgroupCPUWithContext(context.Background(), sftpClient, containerID, base, tick)
+func (d Docker) CgroupCPU(containerID string, base string) (*cpu.TimesStat, error) {
+	return d.CgroupCPUWithContext(context.Background(), containerID, base)
 }
 
 // CgroupCPUUsage returnes specified cgroup id CPU usage.
 // containerID is same as docker id if you use docker.
 // If you use container via systemd.slice, you could use
 // containerID = docker-<container id>.scope and base=/sys/fs/cgroup/cpuacct/system.slice/
-func CgroupCPUUsage(sftpClient *sftp.Client, containerID string, base string) (float64, error) {
-	return CgroupCPUUsageWithContext(context.Background(), sftpClient, containerID, base)
+func (d Docker) CgroupCPUUsage(containerID string, base string) (float64, error) {
+	return d.CgroupCPUUsageWithContext(context.Background(), containerID, base)
 }
 
-func CgroupCPUWithContext(ctx context.Context, sftpClient *sftp.Client, containerID string, base string, tick float64) (*cpu.TimesStat, error) {
-	statfile := getCgroupFilePath(sftpClient, containerID, base, "cpuacct", "cpuacct.stat")
-	lines, err := common.RemoteReadLines(sftpClient, statfile)
+func (d Docker) CgroupCPUWithContext(ctx context.Context, containerID string, base string) (*cpu.TimesStat, error) {
+	statfile := getCgroupFilePath(d.sftpClient, containerID, base, "cpuacct", "cpuacct.stat")
+	lines, err := common.RemoteReadLines(d.sftpClient, statfile)
 	if err != nil {
 		return nil, err
 	}
@@ -110,22 +127,22 @@ func CgroupCPUWithContext(ctx context.Context, sftpClient *sftp.Client, containe
 		if fields[0] == "user" {
 			user, err := strconv.ParseFloat(fields[1], 64)
 			if err == nil {
-				ret.User = user / tick
+				ret.User = user / d.tick
 			}
 		}
 		if fields[0] == "system" {
 			system, err := strconv.ParseFloat(fields[1], 64)
 			if err == nil {
-				ret.System = system / tick
+				ret.System = system / d.tick
 			}
 		}
 	}
 	return ret, nil
 }
 
-func CgroupCPUUsageWithContext(ctx context.Context, sftpClient *sftp.Client, containerID, base string) (float64, error) {
-	usagefile := getCgroupFilePath(sftpClient, containerID, base, "cpuacct", "cpuacct.usage")
-	lines, err := common.RemoteReadLinesOffsetN(sftpClient, usagefile, 0, 1)
+func (d Docker) CgroupCPUUsageWithContext(ctx context.Context, containerID, base string) (float64, error) {
+	usagefile := getCgroupFilePath(d.sftpClient, containerID, base, "cpuacct", "cpuacct.usage")
+	lines, err := common.RemoteReadLinesOffsetN(d.sftpClient, usagefile, 0, 1)
 	if err != nil {
 		return 0.0, err
 	}
@@ -138,34 +155,34 @@ func CgroupCPUUsageWithContext(ctx context.Context, sftpClient *sftp.Client, con
 	return ns / nanoseconds, nil
 }
 
-func CgroupCPUDocker(sftpClient *sftp.Client, containerid string, tick float64) (*cpu.TimesStat, error) {
-	return CgroupCPUDockerWithContext(context.Background(), sftpClient, containerid, tick)
+func (d Docker) CgroupCPUDocker(containerid string) (*cpu.TimesStat, error) {
+	return d.CgroupCPUDockerWithContext(context.Background(), containerid)
 }
 
-func CgroupCPUUsageDocker(sftpClient *sftp.Client, containerid string) (float64, error) {
-	return CgroupCPUDockerUsageWithContext(context.Background(), sftpClient, containerid)
+func (d Docker) CgroupCPUUsageDocker(containerid string) (float64, error) {
+	return d.CgroupCPUDockerUsageWithContext(context.Background(), containerid)
 }
 
-func CgroupCPUDockerWithContext(ctx context.Context, sftpClient *sftp.Client, containerid string, tick float64) (*cpu.TimesStat, error) {
-	return CgroupCPU(sftpClient, containerid, common.HostSys("fs/cgroup/cpuacct/docker"), tick)
+func (d Docker) CgroupCPUDockerWithContext(ctx context.Context, containerid string) (*cpu.TimesStat, error) {
+	return d.CgroupCPU(containerid, common.HostSys("fs/cgroup/cpuacct/docker"))
 }
 
-func CgroupCPUDockerUsageWithContext(ctx context.Context, sftpClient *sftp.Client, containerid string) (float64, error) {
-	return CgroupCPUUsage(sftpClient, containerid, common.HostSys("fs/cgroup/cpuacct/docker"))
+func (d Docker) CgroupCPUDockerUsageWithContext(ctx context.Context, containerid string) (float64, error) {
+	return d.CgroupCPUUsage(containerid, common.HostSys("fs/cgroup/cpuacct/docker"))
 }
 
-func CgroupMem(sftpClient *sftp.Client, containerID string, base string) (*CgroupMemStat, error) {
-	return CgroupMemWithContext(context.Background(), sftpClient, containerID, base)
+func (d Docker) CgroupMem(containerID string, base string) (*CgroupMemStat, error) {
+	return d.CgroupMemWithContext(context.Background(), containerID, base)
 }
 
-func CgroupMemWithContext(ctx context.Context, sftpClient *sftp.Client, containerID string, base string) (*CgroupMemStat, error) {
-	statfile := getCgroupFilePath(sftpClient, containerID, base, "memory", "memory.stat")
+func (d Docker) CgroupMemWithContext(ctx context.Context, containerID string, base string) (*CgroupMemStat, error) {
+	statfile := getCgroupFilePath(d.sftpClient, containerID, base, "memory", "memory.stat")
 
 	// empty containerID means all cgroup
 	if len(containerID) == 0 {
 		containerID = "all"
 	}
-	lines, err := common.RemoteReadLines(sftpClient, statfile)
+	lines, err := common.RemoteReadLines(d.sftpClient, statfile)
 	if err != nil {
 		return nil, err
 	}
@@ -234,19 +251,19 @@ func CgroupMemWithContext(ctx context.Context, sftpClient *sftp.Client, containe
 		}
 	}
 
-	r, err := getCgroupMemFile(sftpClient, containerID, base, "memory.usage_in_bytes")
+	r, err := getCgroupMemFile(d.sftpClient, containerID, base, "memory.usage_in_bytes")
 	if err == nil {
 		ret.MemUsageInBytes = r
 	}
-	r, err = getCgroupMemFile(sftpClient, containerID, base, "memory.max_usage_in_bytes")
+	r, err = getCgroupMemFile(d.sftpClient, containerID, base, "memory.max_usage_in_bytes")
 	if err == nil {
 		ret.MemMaxUsageInBytes = r
 	}
-	r, err = getCgroupMemFile(sftpClient, containerID, base, "memoryLimitInBbytes")
+	r, err = getCgroupMemFile(d.sftpClient, containerID, base, "memoryLimitInBbytes")
 	if err == nil {
 		ret.MemLimitInBytes = r
 	}
-	r, err = getCgroupMemFile(sftpClient, containerID, base, "memoryFailcnt")
+	r, err = getCgroupMemFile(d.sftpClient, containerID, base, "memoryFailcnt")
 	if err == nil {
 		ret.MemFailCnt = r
 	}
@@ -254,12 +271,12 @@ func CgroupMemWithContext(ctx context.Context, sftpClient *sftp.Client, containe
 	return ret, nil
 }
 
-func CgroupMemDocker(sftpClient *sftp.Client, containerID string) (*CgroupMemStat, error) {
-	return CgroupMemDockerWithContext(context.Background(), sftpClient, containerID)
+func (d Docker) CgroupMemDocker(containerID string) (*CgroupMemStat, error) {
+	return d.CgroupMemDockerWithContext(context.Background(), containerID)
 }
 
-func CgroupMemDockerWithContext(ctx context.Context, sftpClient *sftp.Client, containerID string) (*CgroupMemStat, error) {
-	return CgroupMem(sftpClient, containerID, common.HostSys("fs/cgroup/memory/docker"))
+func (d Docker) CgroupMemDockerWithContext(ctx context.Context, containerID string) (*CgroupMemStat, error) {
+	return d.CgroupMem(containerID, common.HostSys("fs/cgroup/memory/docker"))
 }
 
 // getCgroupFilePath constructs file path to get targeted stats file.

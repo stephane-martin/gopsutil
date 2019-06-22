@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/sftp"
 	"github.com/stephane-martin/gopsutil/linux/cpu"
 	"github.com/stephane-martin/gopsutil/linux/disk"
+	"github.com/stephane-martin/gopsutil/linux/docker"
 	"github.com/stephane-martin/gopsutil/linux/host"
 	"github.com/stephane-martin/gopsutil/linux/load"
 	"github.com/stephane-martin/gopsutil/linux/mem"
@@ -78,18 +79,10 @@ func (u *PSUtil) Pids() ([]int, error) {
 	return process.Pids(u.sftpClient)
 }
 
-func (u *PSUtil) HostInfo() (*host.InfoStat, error) {
-	return host.Info(u.sshClient, u.sftpClient)
+func (u *PSUtil) Host() *host.Host {
+	return host.NewHost(u.sshClient, u.sftpClient)
 }
 
-func (u *PSUtil) Boottime() (uint64, error) {
-	return host.BootTime(u.sftpClient)
-}
-
-func (u *PSUtil) Uptime() (uint64, error) {
-	return host.Uptime(u.sftpClient)
-}
-
-func (u *PSUtil) Users() ([]host.UserStat, error) {
-	return host.Users(u.sftpClient)
+func (u *PSUtil) Docker() (*docker.Docker, error) {
+	return docker.NewDocker(u.sshClient, u.sftpClient)
 }

@@ -1,5 +1,3 @@
-// +build linux freebsd openbsd darwin
-
 package process
 
 import (

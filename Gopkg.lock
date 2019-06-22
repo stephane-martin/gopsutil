@@ -2,14 +2,6 @@
 
 
 [[projects]]
-  digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
-  name = "github.com/davecgh/go-spew"
-  packages = ["spew"]
-  pruneopts = "UT"
-  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
-  version = "v1.1.1"
-
-[[projects]]
   digest = "1:9cedee824c21326bd26950bd9e1ffe9dc4e7ca03dc8634d0e6f954ee6a383172"
   name = "github.com/kr/fs"
   packages = ["."]
@@ -34,27 +26,8 @@
   version = "v1.10.0"
 
 [[projects]]
-  digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
-  name = "github.com/pmezard/go-difflib"
-  packages = ["difflib"]
-  pruneopts = "UT"
-  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
-  version = "v1.0.0"
-
-[[projects]]
-  digest = "1:c40d65817cdd41fac9aa7af8bed56927bb2d6d47e4fea566a74880f5c2b1c41e"
-  name = "github.com/stretchr/testify"
-  packages = [
-    "assert",
-    "require",
-  ]
-  pruneopts = "UT"
-  revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
-  version = "v1.2.2"
-
-[[projects]]
   branch = "master"
-  digest = "1:c702843f592f44c2c558f08478b71331119d31907e7945f1cedc9ee3c932e493"
+  digest = "1:ffebede762b00a7ffe84ef08efc4f4e87823b5298b4fd477313579f553db0c6a"
   name = "golang.org/x/crypto"
   packages = [
     "curve25519",
@@ -66,34 +39,26 @@
     "ssh",
   ]
   pruneopts = "UT"
-  revision = "22d7a77e9e5f409e934ed268692e56707cd169e5"
+  revision = "cc06ce4a13d484c0101a9e92913248488a75786d"
 
 [[projects]]
   branch = "master"
-  digest = "1:db6a7e761f35e4d31f872ce17a3a2f673eb35e697b4669cb539ba2ee201c7813"
+  digest = "1:744a04b9e625e4d4fbac89bfeeddc48b1e2e6dabf6c3359bdd097ae6d16f018e"
   name = "golang.org/x/sys"
   packages = [
     "cpu",
     "unix",
-    "windows",
-    "windows/svc",
-    "windows/svc/mgr",
   ]
   pruneopts = "UT"
-  revision = "d0be0721c37eeb5299f245a996a483160fc36940"
+  revision = "d432491b91382bba9c2a91776aa47c9430183a6f"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
     "github.com/pkg/sftp",
-    "github.com/stretchr/testify/assert",
-    "github.com/stretchr/testify/require",
     "golang.org/x/crypto/ssh",
     "golang.org/x/sys/unix",
-    "golang.org/x/sys/windows",
-    "golang.org/x/sys/windows/svc",
-    "golang.org/x/sys/windows/svc/mgr",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

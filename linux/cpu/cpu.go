@@ -83,8 +83,7 @@ func (c InfoStat) String() string {
 }
 
 func getAllBusy(t TimesStat) (float64, float64) {
-	busy := t.User + t.System + t.Nice + t.Iowait + t.Irq +
-		t.Softirq + t.Steal + t.Guest + t.GuestNice
+	busy := t.User + t.System + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal + t.Guest + t.GuestNice
 	return busy + t.Idle, busy
 }
 
@@ -104,10 +103,7 @@ func calculateBusy(t1, t2 TimesStat) float64 {
 func calculateAllBusy(t1, t2 []TimesStat) ([]float64, error) {
 	// Make sure the CPU measurements have the same length.
 	if len(t1) != len(t2) {
-		return nil, fmt.Errorf(
-			"received two CPU counts: %d != %d",
-			len(t1), len(t2),
-		)
+		return nil, fmt.Errorf("received two CPU counts: %d != %d", len(t1), len(t2))
 	}
 
 	ret := make([]float64, len(t1))
@@ -156,7 +152,6 @@ func (p *PercentLast) Next(percpu bool) ([]float64, error) {
 		lastTimes = p.lastCPUPercent.lastCPUTimes
 		p.lastCPUPercent.lastCPUTimes = cpuTimes
 	}
-
 	if lastTimes == nil {
 		return nil, fmt.Errorf("error getting times for cpu percent. lastTimes was nil")
 	}
@@ -174,20 +169,16 @@ func (c *CPU) PercentWithContext(ctx context.Context, client *sftp.Client, inter
 	if interval <= 0 {
 		return nil, errors.New("interval must be strictly positive")
 	}
-
 	// Get CPU usage at the start of the interval.
 	cpuTimes1, err := c.Times(percpu)
 	if err != nil {
 		return nil, err
 	}
-
 	time.Sleep(interval)
-
 	// And at the end of the interval.
 	cpuTimes2, err := c.Times(percpu)
 	if err != nil {
 		return nil, err
 	}
-
 	return calculateAllBusy(cpuTimes1, cpuTimes2)
 }

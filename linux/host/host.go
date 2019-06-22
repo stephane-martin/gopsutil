@@ -2,7 +2,51 @@ package host
 
 import (
 	"encoding/json"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 )
+
+type Host struct {
+	sshClient  *ssh.Client
+	sftpClient *sftp.Client
+}
+
+func NewHost(sshClient *ssh.Client, sftpClient *sftp.Client) *Host {
+	return &Host{sshClient: sshClient, sftpClient: sftpClient}
+}
+
+func (h *Host) Info() (*InfoStat, error) {
+	return Info(h.sshClient, h.sftpClient)
+}
+
+func (h *Host) BootTime() (uint64, error) {
+	return BootTime(h.sftpClient)
+}
+
+func (h *Host) Uptime() (uint64, error) {
+	return Uptime(h.sftpClient)
+}
+
+func (h *Host) Users() ([]UserStat, error) {
+	return Users(h.sftpClient)
+}
+
+func (h *Host) Platform() (string, string, string, error) {
+	return PlatformInformation(h.sshClient, h.sftpClient)
+}
+
+func (h *Host) KernelVersion() (string, error) {
+	return KernelVersion(h.sftpClient)
+}
+
+func (h *Host) Virtualization() (string, string, error) {
+	return Virtualization(h.sftpClient)
+}
+
+func (h *Host) Temperatures() ([]TemperatureStat, error) {
+	return SensorsTemperatures(h.sftpClient)
+}
 
 // A HostInfoStat describes the host status.
 // This is not in the psutil but it useful.

@@ -1,8 +1,3 @@
-// ATTENTION - FILE MANUAL FIXED AFTER CGO.
-// Fixed line: Tv		_Ctype_struct_timeval -> Tv		UtTv
-// Created by cgo -godefs, MANUAL FIXED
-// cgo -godefs types_linux.go
-
 package host
 
 const (

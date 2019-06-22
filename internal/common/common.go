@@ -48,6 +48,10 @@ type RemoteInvoke struct {
 	Client *ssh.Client
 }
 
+func SSHInvoke(c *ssh.Client) Invoker {
+	return RemoteInvoke{Client: c}
+}
+
 func (i Invoke) Command(name string, arg ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()

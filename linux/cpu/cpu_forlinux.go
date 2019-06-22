@@ -1,5 +1,3 @@
-// +build linux
-
 package cpu
 
 import (
@@ -20,10 +18,7 @@ type CPU struct {
 }
 
 func NewCPU(sshClient *ssh.Client, sftpClient *sftp.Client) (*CPU, error) {
-	invoke := common.RemoteInvoke{
-		Client: sshClient,
-	}
-	out, err := invoke.CommandWithContext(context.Background(), "getconf", "CLK_TCK")
+	out, err := common.SSHInvoke(sshClient).CommandWithContext(context.Background(), "getconf", "CLK_TCK")
 	if err != nil {
 		return nil, err
 	}
