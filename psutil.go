@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
+	"github.com/stephane-martin/gopsutil/linux/battery"
 	"github.com/stephane-martin/gopsutil/linux/cpu"
 	"github.com/stephane-martin/gopsutil/linux/disk"
 	"github.com/stephane-martin/gopsutil/linux/docker"
@@ -85,4 +86,8 @@ func (u *PSUtil) Host() *host.Host {
 
 func (u *PSUtil) Docker() (*docker.Docker, error) {
 	return docker.NewDocker(u.sshClient, u.sftpClient)
+}
+
+func (u *PSUtil) Battery() ([]*battery.Battery, error) {
+	return battery.GetAll(u.sftpClient)
 }
