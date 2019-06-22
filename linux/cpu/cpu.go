@@ -119,7 +119,7 @@ type PercentLast struct {
 	c              *CPU
 }
 
-func (c *CPU) NewPercentLast(client *sftp.Client) (*PercentLast, error) {
+func (c *CPU) NewPercentLast() (*PercentLast, error) {
 	var e1, e2 error
 	p := new(PercentLast)
 	p.lastCPUPercent.Lock()
@@ -132,7 +132,7 @@ func (c *CPU) NewPercentLast(client *sftp.Client) (*PercentLast, error) {
 	if e2 != nil {
 		return nil, e2
 	}
-	p.client = client
+	p.client = c.sftpClient
 	p.c = c
 	return p, nil
 }
@@ -161,11 +161,11 @@ func (p *PercentLast) Next(percpu bool) ([]float64, error) {
 // Percent calculates the percentage of cpu used either per CPU or combined.
 // If an interval of 0 is given it will compare the current cpu times against the last call.
 // Returns one value per cpu, or a single value if percpu is set to false.
-func (c *CPU) Percent(client *sftp.Client, interval time.Duration, percpu bool) ([]float64, error) {
-	return c.PercentWithContext(context.Background(), client, interval, percpu)
+func (c *CPU) Percent(interval time.Duration, percpu bool) ([]float64, error) {
+	return c.PercentWithContext(context.Background(), interval, percpu)
 }
 
-func (c *CPU) PercentWithContext(ctx context.Context, client *sftp.Client, interval time.Duration, percpu bool) ([]float64, error) {
+func (c *CPU) PercentWithContext(ctx context.Context, interval time.Duration, percpu bool) ([]float64, error) {
 	if interval <= 0 {
 		return nil, errors.New("interval must be strictly positive")
 	}
