@@ -10,7 +10,7 @@ import (
 type Mem struct {
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
-	pageSize   uint64
+	PageSize   uint64
 }
 
 func NewMem(sshClient *ssh.Client, sftpClient *sftp.Client) (*Mem, error) {
@@ -21,12 +21,12 @@ func NewMem(sshClient *ssh.Client, sftpClient *sftp.Client) (*Mem, error) {
 	return &Mem{
 		sshClient:  sshClient,
 		sftpClient: sftpClient,
-		pageSize:   size,
+		PageSize:   size,
 	}, nil
 }
 
 func (m *Mem) VirtualMemory() (*VirtualMemoryStat, error) {
-	return VirtualMemory(m.sftpClient, m.pageSize)
+	return VirtualMemory(m.sftpClient, m.PageSize)
 }
 
 // Memory usage statistics. Total, Available and Used contain numbers of bytes
