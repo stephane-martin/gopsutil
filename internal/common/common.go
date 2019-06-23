@@ -100,7 +100,7 @@ func (i RemoteInvoke) CommandWithContext(ctx context.Context, name string, arg .
 	var output []byte
 	done := make(chan struct{})
 	go func() {
-		output, err = session.CombinedOutput(cmd)
+		output, err = session.Output(cmd)
 		close(done)
 	}()
 	select {
